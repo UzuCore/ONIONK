@@ -48,6 +48,21 @@ bool file_isModified(const char *path, time_t *old_mtime)
     return false;
 }
 
+bool file_isLocked(const char *path)
+{
+    int fd = open(path, O_RDONLY | O_CREAT, 0666);
+    if (fd == -1)
+        return true;
+    close(fd);
+    return false;
+}
+
+const char *file_basename(const char *filename)
+{
+    char *p = strrchr(filename, '/');
+    return p ? p + 1 : (char *)filename;
+}
+
 /**
  * @brief Create directories in dir_path using `mkdir -p` command.
  *
@@ -100,7 +115,7 @@ void file_readLastLine(const char *filename, char *out_str)
     }
 }
 
-const char *file_read(const char *path)
+char *file_read(const char *path)
 {
     FILE *f = NULL;
     char *buffer = NULL;
@@ -136,12 +151,12 @@ bool file_write(const char *path, const char *str, uint32_t len)
 
 void file_copy(const char *src_path, const char *dest_path)
 {
-    char system_cmd[512];
-    snprintf(system_cmd, 511, "cp -f \"%s\" \"%s\"", src_path, dest_path);
+    char system_cmd[4128];
+    snprintf(system_cmd, sizeof(system_cmd), "cp -f \"%s\" \"%s\"", src_path, dest_path);
     system(system_cmd);
 }
 
-char *file_removeExtension(char *myStr)
+char *file_removeExtension(const char *myStr)
 {
     if (myStr == NULL)
         return NULL;
@@ -155,12 +170,12 @@ char *file_removeExtension(char *myStr)
     return retStr;
 }
 
-char *extractPath(const char *absolutePath)
+char *file_dirname(const char *absolutePath)
 {
     const char *lastSlash = strrchr(absolutePath, '/');
     if (lastSlash != NULL) {
         char *path;
-        size_t pathLength = lastSlash - absolutePath + 1;
+        size_t pathLength = lastSlash - absolutePath;
         path = (char *)malloc(pathLength + 1);
         if (path != NULL) {
             strncpy(path, absolutePath, pathLength);
@@ -173,7 +188,7 @@ char *extractPath(const char *absolutePath)
 
 void file_cleanName(char *name_out, const char *file_name)
 {
-    char *name_without_ext = file_removeExtension(strdup(file_name));
+    char *name_without_ext = file_removeExtension(file_name);
     char *no_underscores = str_replace(name_without_ext, "_", " ");
     char *dot_ptr = strstr(no_underscores, ".");
     if (dot_ptr != NULL) {
@@ -239,6 +254,7 @@ char *file_parseKeyValue(const char *file_path, const char *key_in,
             key[0] = 0;
             val[0] = 0;
         }
+        free(line);
         fclose(fp);
     }
 
@@ -450,7 +466,9 @@ void file_add_line_to_beginning(const char *filename, const char *lineToAdd)
         return;
     }
     char tempPath[STR_MAX];
-    sprintf(tempPath, "%s/temp.txt", extractPath(filename));
+    char *path = file_dirname(filename);
+    sprintf(tempPath, "%s/temp.txt", path);
+    free(path);
 
     FILE *tempFile = fopen(tempPath, "w");
     if (tempFile == NULL) {
@@ -475,4 +493,57 @@ void file_add_line_to_beginning(const char *filename, const char *lineToAdd)
         return;
     }
     print_debug("Line added to the beginning of the file successfully.\n");
+}
+
+char *file_resolvePath(const char *path)
+{
+    if (path == NULL) {
+        return NULL;
+    }
+
+    // Allocate memory for the resolved path
+    char *resolvedPath = (char *)malloc(PATH_MAX);
+    if (resolvedPath == NULL) {
+        perror("Error allocating memory for resolved path");
+        return NULL;
+    }
+
+    // Copy the input path to a temporary buffer
+    char tempPath[PATH_MAX];
+    strncpy(tempPath, path, PATH_MAX - 1);
+    tempPath[PATH_MAX - 1] = '\0';
+
+    // Initialize an array to hold the path components
+    char *components[PATH_MAX];
+    int componentCount = 0;
+
+    // Split the path into components
+    char *token = strtok(tempPath, "/");
+    while (token != NULL) {
+        if (strcmp(token, "..") == 0) {
+            // Handle ".." by removing the last component if there is one
+            if (componentCount > 0) {
+                componentCount--;
+            }
+        }
+        else if (strcmp(token, ".") != 0) {
+            // Ignore "." and add other components to the array
+            components[componentCount++] = token;
+        }
+        token = strtok(NULL, "/");
+    }
+
+    // Reconstruct the resolved path
+    resolvedPath[0] = '\0';
+    for (int i = 0; i < componentCount; i++) {
+        strcat(resolvedPath, "/");
+        strcat(resolvedPath, components[i]);
+    }
+
+    // Handle the case where the path is empty
+    if (resolvedPath[0] == '\0') {
+        strcpy(resolvedPath, "/");
+    }
+
+    return resolvedPath;
 }

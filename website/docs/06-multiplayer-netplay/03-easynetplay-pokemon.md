@@ -61,7 +61,7 @@ Setting up the host is as easy as:
 
 2. Press <kbd>Y</kbd> to open GLO
 
-3. Choose `Netplay` -> `Host` -> `Easy Netplay - Pokemon Trade/Battle`
+3. Choose `Netplay` -> `Host a session...` -> `Easy Netplay - Pokemon Trade/Battle`
  
 Onion will now take over and setup a session on the built in personal hotspot.
 
@@ -76,7 +76,7 @@ As with the host, getting connected as a client is just as simple:
 
 2. Press <kbd>Y</kbd> to open GLO
 
-3. Choose `Netplay` -> `Join` -> `Easy Netplay - Pokemon Trade/Battle`
+3. Choose `Netplay` -> `Join a session...` -> `Easy Netplay - Pokemon Trade/Battle`
  
 Onion will now take over and join the hotspot, pull the information from the host and connect! 
 
@@ -85,7 +85,7 @@ Onion will now take over and join the hotspot, pull the information from the hos
 
 If something happens along the way, don't worry. We've got you covered. 
 
-In the TGB Dual folder, aswell as your actual save file you'll find a backup from just before the trade.
+In the TGB Dual folder, as well as your actual save file you'll find a backup from just before the trade.
 
 If anything goes wrong, quit RetroArch. Head over to: `Saves/CurrentProfile/saves/TGB Dual` and look for a file with the name ending `_bkup` - Remove this `_bkup` tag and restart RetroArch and all shall be saved - depending on your load save state setting you may need to temporarily move your save states to force load the backup save, then take a new save state.
 
