@@ -266,12 +266,7 @@ int main(int argc, char *argv[])
 
         if (keystate[SW_BTN_A]) {
             if (levelPage == 1) {
-<<<<<<< HEAD
-                showCenteredMessage(video, screen, "설치하는 중...", font30,
-                                    color_white);
-=======
-                showCenteredMessage(video, screen, "Installing...", font30, color_white);
->>>>>>> cff07dfebe7b7ea9e010bc21b96215f4ac950676
+                showCenteredMessage(video, screen, "설치중...", font30, color_white);
 
                 // Install theme
                 installTheme(theme.path, apply_icons);
