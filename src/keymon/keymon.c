@@ -1,3 +1,5 @@
+#include <SDL/SDL.h>
+#include <SDL/SDL_ttf.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -24,6 +26,9 @@
 #include "system/system.h"
 #include "system/system_utils.h"
 #include "system/volume.h"
+#include "theme/config.h"
+#include "theme/render.h"
+#include "theme/resources.h"
 #include "utils/config.h"
 #include "utils/file.h"
 #include "utils/flags.h"
@@ -163,7 +168,7 @@ void resume(void)
 //
 void quit(int exitcode)
 {
-    display_free();
+    display_close();
     if (input_fd > 0)
         close(input_fd);
     system_clock_get();
@@ -198,44 +203,47 @@ void wait(int seconds)
     }
 }
 
+void showBootScreen(const char *type)
+{
+    char cmd[256];
+    sprintf(cmd, "bootScreen \"%s\" &", type);
+    system(cmd);
+}
+
 //
 //    [onion] deepsleep if MainUI/gameSwitcher/retroarch is running
 //
 void deepsleep(void)
 {
     system_state_update();
+
+    if (system_state == MODE_GAME && !check_autosave()) {
+        return;
+    }
+
+    short_pulse();
+    set_system_shutdown();
+
     if (system_state == MODE_MAIN_UI) {
-        short_pulse();
-        set_system_shutdown();
         kill_mainUI();
     }
     else if (system_state == MODE_SWITCHER) {
-        short_pulse();
-        set_system_shutdown();
         kill(system_state_pid, SIGTERM);
     }
     else if (system_state == MODE_GAME) {
-        if (check_autosave()) {
-            short_pulse();
-            set_system_shutdown();
-            screenshot_system();
-            terminate_retroarch();
-        }
+        screenshot_system();
+        retroarch_pause();
+        showBootScreen("End_Save");
+        terminate_retroarch();
     }
     else if (system_state == MODE_ADVMENU) {
-        short_pulse();
-        set_system_shutdown();
         kill(system_state_pid, SIGQUIT);
     }
     else if (system_state == MODE_APPS) {
-        short_pulse();
         remove(CMD_TO_RUN_PATH);
-        set_system_shutdown();
         suspend(1);
     }
     else if (system_state == MODE_DRASTIC) {
-        short_pulse();
-        set_system_shutdown();
         screenshot_system();
         terminate_drastic();
     }
@@ -252,15 +260,18 @@ void deepsleep(void)
 //
 void suspend_exec(int timeout)
 {
+    bool stay_awake = timeout == -1;
     keyinput_disable();
 
     // pause playActivity
     system("playActivity stop_all");
 
     // suspend
-    suspend(0);
+    if (!stay_awake) {
+        suspend(0);
+        setVolume(0);
+    }
     rumble(0);
-    setVolume(0);
     display_setBrightnessRaw(0);
     display_off();
     system_powersave_on();
@@ -335,6 +346,77 @@ void turnOffScreen(void)
     suspend_exec(stay_awake ? -1 : timeout);
 }
 
+/**
+ * @brief Adjusts the CPU clock speed based on the given adjustment value and triggers an OSD message
+ *
+ * This function reads the current CPU clock speed, adjusts it by the specified
+ * amount, and sets the new CPU clock speed if it falls within the allowed range.
+ * It then triggers an OSD message to display the new CPU clock speed.
+ * If the new CPU clock speed is outside the allowed range, a short pulse is triggered
+ * and the function returns without making any changes.
+ *
+ * @param adjust The amount to adjust the CPU clock speed by (in MHz).
+ *
+ * @return void
+ */
+void cpuClockHotkey(int adjust)
+{
+    if (config_flag_get(".cpuClockHotkey") == 0) {
+        return;
+    }
+    printf_debug("cpuClockHotkey: %d\n", adjust);
+    int min_cpu_clock = 500; // ?
+    int max_cpu_clock;
+    switch (DEVICE_ID) {
+    case MIYOO354:
+        max_cpu_clock = 1800;
+        break;
+    case MIYOO283:
+        max_cpu_clock = 1600;
+        break;
+    default:
+        // Unknown device
+        return;
+    }
+    char cpuclockstr[5];
+
+    // Read current CPU clock
+    int ret = process_start_read_return("cpuclock", cpuclockstr);
+    int cpuclock = atoi(cpuclockstr);
+    printf_debug("Current CPU clock: %d\n", cpuclock);
+    cpuclock += adjust;
+    printf_debug("Desired CPU clock: %d\n", cpuclock);
+    // Bounds check
+    if (cpuclock < min_cpu_clock || cpuclock > max_cpu_clock) {
+        printf_debug("Desired CPU clock %d out of range (%d, %d)\n", cpuclock, min_cpu_clock, max_cpu_clock);
+        SDL_Surface *surface = theme_createTextOverlay("CPU clock out of range", (SDL_Color){255, 255, 255}, (SDL_Color){0, 0, 0}, 1.0, 10);
+        if (surface && overlay_surface(surface, 10, 10, 1000, true) != 0) {
+            SDL_FreeSurface(surface);
+        }
+        short_pulse();
+        return;
+    }
+
+    // Set new CPU clock
+    char cmd[STR_MAX];
+    snprintf(cmd, STR_MAX, "cpuclock %d", cpuclock);
+    ret = process_start_read_return(cmd, cpuclockstr);
+    if (ret == 0) {
+        printf_debug("Updated CPU clock: %s\n", cpuclockstr);
+        char osd_txt[STR_MAX];
+        snprintf(osd_txt, STR_MAX, "CPU clock set to %s MHz", cpuclockstr);
+        SDL_Surface *surface = theme_createTextOverlay(osd_txt, (SDL_Color){255, 255, 255}, (SDL_Color){0, 0, 0}, 1.0, 10);
+        if (surface && overlay_surface(surface, 10, 10, 1000, true) != 0) {
+            SDL_FreeSurface(surface);
+        }
+    }
+}
+
+static void signal_refresh(int sig)
+{
+    display_getRenderResolution();
+}
+
 //
 //    Main
 //
@@ -343,7 +425,7 @@ int main(void)
     // Initialize
     signal(SIGTERM, quit);
     signal(SIGSEGV, quit);
-    signal(SIGUSR1, display_getRenderResolution);
+    signal(SIGUSR1, signal_refresh);
     log_setName("keymon");
 
     getDeviceModel();
@@ -361,7 +443,7 @@ int main(void)
     printf_debug("Settings loaded. Brightness set to: %d\n",
                  settings.brightness);
 
-    display_init();
+    display_init(true);
 
     // Prepare for Poll button input
     input_fd = open("/dev/input/event0", O_RDONLY);
@@ -505,6 +587,16 @@ int main(void)
             case HW_BTN_START:
                 if (val != REPEAT)
                     button_flag = (button_flag & (~START)) | (val << START_BIT);
+                break;
+            case HW_BTN_R1:
+                if (val == PRESSED && (button_flag & (SELECT | START)) == (SELECT | START)) {
+                    cpuClockHotkey(100);
+                }
+                break;
+            case HW_BTN_L1:
+                if (val == PRESSED && (button_flag & (SELECT | START)) == (SELECT | START)) {
+                    cpuClockHotkey(-100);
+                }
                 break;
             case HW_BTN_L2:
                 if (val == REPEAT) {
@@ -823,7 +915,7 @@ int main(void)
         }
 
         // Check bluelight filter
-        if (DEVICE_ID == MIYOO354) {
+        if (settings.blue_light_schedule) {
             system("/mnt/SDCARD/.tmp_update/script/blue_light.sh check");
         }
 

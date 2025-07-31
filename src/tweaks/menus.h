@@ -92,7 +92,7 @@ bool _writeDateString(char *label_out)
 void menu_datetime(void *_)
 {
     if (!_menu_date_time._created) {
-        _menu_date_time = list_create(6, LIST_SMALL);
+        _menu_date_time = list_create(7, LIST_SMALL);
         strcpy(_menu_date_time.title, "Date and time");
         list_addItem(&_menu_date_time,
                      (ListItem){
@@ -125,6 +125,16 @@ void menu_datetime(void *_)
                                      " \n"
                                      "Ensures that time is synced before a game\n"
                                      "is launched.");
+            list_addItemWithInfoNote(&_menu_date_time,
+                                     (ListItem){
+                                         .label = "Enable Wi-Fi temporarily",
+                                         .item_type = TOGGLE,
+                                         .disabled = !network_state.ntp,
+                                         .value = (int)network_state.force_wifi_on_startup,
+                                         .action = network_setNtpForceState},
+                                     "Enables Wi-Fi temporarily at startup\n"
+                                     "to sync the time. It will be turned off\n"
+                                     "again after the sync (if it was off).");
             list_addItemWithInfoNote(&_menu_date_time,
                                      (ListItem){
                                          .label = "Get time zone via IP address",
@@ -272,7 +282,7 @@ void menu_buttonActionInGameMenu(void *_)
                                  (ListItem){
                                      .label = "Single press",
                                      .item_type = MULTIVALUE,
-                                     .value_max = 3,
+                                     .value_max = 4,
                                      .value_labels = BUTTON_INGAME_LABELS,
                                      .value = settings.ingame_single_press,
                                      .action_id = 3,
@@ -283,7 +293,7 @@ void menu_buttonActionInGameMenu(void *_)
                                  (ListItem){
                                      .label = "Long press",
                                      .item_type = MULTIVALUE,
-                                     .value_max = 3,
+                                     .value_max = 4,
                                      .value_labels = BUTTON_INGAME_LABELS,
                                      .value = settings.ingame_long_press,
                                      .action_id = 4,
@@ -294,7 +304,7 @@ void menu_buttonActionInGameMenu(void *_)
                                  (ListItem){
                                      .label = "Double press",
                                      .item_type = MULTIVALUE,
-                                     .value_max = 3,
+                                     .value_max = 4,
                                      .value_labels = BUTTON_INGAME_LABELS,
                                      .value = settings.ingame_double_press,
                                      .action_id = 5,
@@ -481,10 +491,12 @@ void menu_themeOverrides(void *_)
 
 void menu_blueLight(void *_)
 {
+    bool schedule_show = (DEVICE_ID == MIYOO354 || settings.rtc_available || settings.blue_light_schedule);
+    bool schedule_disable = (!settings.rtc_available && !network_state.ntp && !settings.blue_light_schedule);
     if (!_menu_user_blue_light._created) {
         network_loadState();
         _menu_user_blue_light = list_createWithTitle(6, LIST_SMALL, "Blue light filter");
-        if (DEVICE_ID == MIYOO354) {
+        if (schedule_show) {
             list_addItem(&_menu_user_blue_light,
                          (ListItem){
                              .label = "[DATESTRING]",
@@ -500,11 +512,11 @@ void menu_blueLight(void *_)
                                      .value = (int)settings.blue_light_state || exists("/tmp/.blfOn"),
                                      .action = action_blueLight},
                                  "Set the selected strength now\n");
-        if (DEVICE_ID == MIYOO354) {
+        if (schedule_show) {
             list_addItemWithInfoNote(&_menu_user_blue_light,
                                      (ListItem){
                                          .label = "",
-                                         .disabled = !network_state.ntp,
+                                         .disabled = schedule_disable,
                                          .item_type = TOGGLE,
                                          .value = (int)settings.blue_light_schedule,
                                          .action = action_blueLightSchedule},
@@ -522,11 +534,11 @@ void menu_blueLight(void *_)
                                      .value = value_blueLightLevel()},
                                  "Change the strength of the \n"
                                  "Blue light filter");
-        if (DEVICE_ID == MIYOO354) {
+        if (schedule_show) {
             list_addItemWithInfoNote(&_menu_user_blue_light,
                                      (ListItem){
                                          .label = "Time (On)",
-                                         .disabled = !network_state.ntp,
+                                         .disabled = schedule_disable,
                                          .item_type = MULTIVALUE,
                                          .value_max = 95,
                                          .value_formatter = formatter_Time,
@@ -536,7 +548,7 @@ void menu_blueLight(void *_)
             list_addItemWithInfoNote(&_menu_user_blue_light,
                                      (ListItem){
                                          .label = "Time (Off)",
-                                         .disabled = !network_state.ntp,
+                                         .disabled = schedule_disable,
                                          .item_type = MULTIVALUE,
                                          .value_max = 95,
                                          .value_formatter = formatter_Time,
@@ -545,7 +557,7 @@ void menu_blueLight(void *_)
                                      "Time schedule for the bluelight filter");
         }
     }
-    if (DEVICE_ID == MIYOO354) {
+    if (schedule_show) {
         _writeDateString(_menu_user_blue_light.items[0].label);
         char scheduleToggleLabel[100];
         strcpy(scheduleToggleLabel, exists("/tmp/.blfIgnoreSchedule") ? "Schedule (ignored)" : "Schedule");
@@ -577,7 +589,7 @@ void menu_userInterface(void *_)
                                      .action = action_setShowExpert},
                                  "Toggle the visibility of the expert tab\n"
                                  "in the main menu.");
-        display_init();
+        display_init(true);
         list_addItemWithInfoNote(&_menu_user_interface,
                                  (ListItem){
                                      .label = "OSD bar size",
@@ -671,15 +683,18 @@ void menu_diagnostics(void *pt)
                 .action = action_runDiagnosticScript,
             };
 
-            const char *prefix = "";
+            const char *prefix;
             if (strncmp(scripts[i].filename, "util", 4) == 0) {
-                prefix = "Util: ";
+                prefix = "Util:%.62s";
             }
             else if (strncmp(scripts[i].filename, "fix", 3) == 0) {
-                prefix = "Fix: ";
+                prefix = "Fix:%.62s";
+            }
+            else {
+                prefix = "%.62s";
             }
 
-            snprintf(diagItem.label, DIAG_MAX_LABEL_LENGTH - 1, "%s%.62s", prefix, scripts[i].label);
+            snprintf(diagItem.label, DIAG_MAX_LABEL_LENGTH - 1, prefix, scripts[i].label);
             strncpy(diagItem.sticky_note, "Idle: Selected script not running", STR_MAX - 1);
 
             char *parsed_Tooltip = diags_parseNewLines(scripts[i].tooltip);
@@ -695,7 +710,17 @@ void menu_diagnostics(void *pt)
 void menu_advanced(void *_)
 {
     if (!_menu_advanced._created) {
-        _menu_advanced = list_createWithTitle(7, LIST_SMALL, "Advanced");
+        _menu_advanced = list_createWithTitle(8, LIST_SMALL, "Advanced");
+        if (exists(RESET_CONFIGS_PAK)) {
+            list_addItem(&_menu_advanced,
+                         (ListItem){
+                             .label = "Reset settings...",
+                             .action = menu_resetSettings});
+        }
+        list_addItem(&_menu_advanced,
+                     (ListItem){
+                         .label = "Diagnostics...",
+                         .action = menu_diagnostics});
         list_addItemWithInfoNote(&_menu_advanced,
                                  (ListItem){
                                      .label = "Swap triggers (L<>L2, R<>R2)",
@@ -704,6 +729,14 @@ void menu_advanced(void *_)
                                      .action = action_advancedSetSwapTriggers},
                                  "Swap the function of L<>L2 and R<>R2\n"
                                  "(only affects in-game actions).");
+        list_addItemWithInfoNote(&_menu_advanced,
+                                 (ListItem){
+                                     .label = "OC hotkeys (SELECT+START+L/R)",
+                                     .item_type = TOGGLE,
+                                     .value = config_flag_get(".cpuClockHotkey"),
+                                     .action = action_setCpuClockHotkey},
+                                 "Enable the global hotkeys for\n"
+                                 "overclocking the CPU.");
         if (DEVICE_ID == MIYOO283) {
             list_addItemWithInfoNote(&_menu_advanced,
                                      (ListItem){
@@ -748,16 +781,6 @@ void menu_advanced(void *_)
                                      "Use this option if you're seeing\n"
                                      "small artifacts on the display.");
         }
-        if (exists(RESET_CONFIGS_PAK)) {
-            list_addItem(&_menu_advanced,
-                         (ListItem){
-                             .label = "Reset settings...",
-                             .action = menu_resetSettings});
-        }
-        list_addItem(&_menu_advanced,
-                     (ListItem){
-                         .label = "Diagnostics...",
-                         .action = menu_diagnostics});
     }
     menu_stack[++menu_level] = &_menu_advanced;
     header_changed = true;

@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
     signal(SIGTERM, sigHandler);
 
     if (use_display || strlen(apply_tool) == 0)
-        SDL_InitDefault(true);
+        SDL_InitDefault();
 
     settings_load();
 
@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
 
     bool menu_combo_pressed = false;
     bool key_changed = false;
-    SDLKey changed_key;
+    SDLKey changed_key = SDLK_UNKNOWN;
 
     bool show_help_tooltip = !config_flag_get(".tweaksHelpCompleted");
 
@@ -282,7 +282,7 @@ int main(int argc, char *argv[])
     network_freeSmbShares();
     diags_freeEntries();
 
-    display_free();
+    display_close();
 
     lang_free();
     menu_free_all();

@@ -21,13 +21,47 @@
 #define LANG_FALLBACK_CANCEL "CANCEL"
 #define LANG_FALLBACK_NEXT "NEXT"
 #define LANG_FALLBACK_EXIT "EXIT"
-#define LANG_FALLBACK_RESUME "RESUME"
+#define LANG_FALLBACK_RESUME_UC "RESUME"
 
 #define LANG_FALLBACK_RECENTS_TAB "Recents"
 #define LANG_FALLBACK_FAVORITES_TAB "Favorites"
 #define LANG_FALLBACK_GAMES_TAB "Games"
 #define LANG_FALLBACK_EXPERT_TAB "Expert"
 #define LANG_FALLBACK_APPS_TAB "Apps"
+
+#define LANG_FALLBACK_RESUME "Resume"
+#define LANG_FALLBACK_SAVE "Save"
+#define LANG_FALLBACK_LOAD "Load"
+#define LANG_FALLBACK_EXIT_TO_MENU "Exit to menu"
+#define LANG_FALLBACK_ADVANCED "Advanced"
+
+static char **lang_list = NULL;
+
+typedef enum {
+    LANG_EXPERT_TAB = 0,
+    LANG_FAVORITES_TAB = 1,
+    LANG_GAMES_TAB = 2,
+    LANG_SETTINGS_TAB = 15,
+    LANG_RECENTS_TAB = 18,
+    LANG_CHARGING = 40,
+    LANG_CANCEL = 45,
+    LANG_OK = 46,
+    LANG_LOADING_SCREEN = 75,
+    LANG_LOADING_TITLE = 76,
+    LANG_SELECT = 88,
+    LANG_BACK = 89,
+    LANG_MENU = 91,
+    LANG_RESUME = 92,
+    LANG_SAVE = 93,
+    LANG_LOAD = 94,
+    LANG_EXIT_TO_MENU = 96,
+    LANG_ADVANCED = 106,
+    LANG_APPS_TAB = 107,
+    LANG_EXIT = 111,
+    LANG_SAVE_EXIT = 112,
+    LANG_NEXT = 300,
+    LANG_RESUME_UC = 301
+} lang_hash;
 
 void lang_removeIconLabels(bool remove_icon_labels, bool remove_hints)
 {
@@ -45,8 +79,10 @@ void lang_removeIconLabels(bool remove_icon_labels, bool remove_hints)
         }
     }
 
-    if (!remove_icon_labels && !remove_hints)
+    if (!remove_icon_labels && !remove_hints) {
+        closedir(dp);
         return;
+    }
 
     // backup lang files
     if (!exists(LANG_DIR_BACKUP))
@@ -61,8 +97,9 @@ void lang_removeIconLabels(bool remove_icon_labels, bool remove_hints)
         char file_path[STR_MAX * 2];
         snprintf(file_path, STR_MAX * 2 - 1, LANG_DIR "/%s", ep->d_name);
 
-        const char *json_data = file_read(file_path);
+        char *json_data = file_read(file_path);
         cJSON *root = cJSON_Parse(json_data);
+        free(json_data);
 
         if (!root)
             continue;
@@ -96,29 +133,6 @@ void lang_removeIconLabels(bool remove_icon_labels, bool remove_hints)
     closedir(dp);
 }
 
-static char **lang_list = NULL;
-
-typedef enum {
-    LANG_EXPERT_TAB = 0,
-    LANG_FAVORITES_TAB = 1,
-    LANG_GAMES_TAB = 2,
-    LANG_SETTINGS_TAB = 15,
-    LANG_RECENTS_TAB = 18,
-    LANG_CHARGING = 40,
-    LANG_CANCEL = 45,
-    LANG_OK = 46,
-    LANG_LOADING_SCREEN = 75,
-    LANG_LOADING_TITLE = 76,
-    LANG_SELECT = 88,
-    LANG_BACK = 89,
-    LANG_MENU = 91,
-    LANG_APPS_TAB = 107,
-    LANG_EXIT = 111,
-    LANG_SAVE_EXIT = 112,
-    LANG_NEXT = 300,
-    LANG_RESUME = 301
-} lang_hash;
-
 bool lang_getFilePath(const char *lang_name, char *lang_path)
 {
     sprintf(lang_path, LANG_DIR_BACKUP "/%s", lang_name);
@@ -143,6 +157,7 @@ bool lang_load(void)
         return false;
 
     lang_list = (char **)malloc(LANG_MAX * sizeof(char *));
+    memset(lang_list, 0, LANG_MAX * sizeof(char *));
 
     cJSON *lang_file = json_load(lang_path);
 
@@ -161,7 +176,15 @@ bool lang_load(void)
     return true;
 }
 
-void lang_free(void) { free(lang_list); }
+void lang_free(void)
+{
+    for (int i = 0; i < LANG_MAX; i++) {
+        if (lang_list[i] == NULL)
+            continue;
+        free(lang_list[i]);
+    }
+    free(lang_list);
+}
 
 const char *lang_get(lang_hash key, const char *fallback)
 {
